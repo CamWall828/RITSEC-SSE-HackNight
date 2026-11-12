@@ -1,5 +1,5 @@
 name = "packetcat"
-main = "/"
+main = "src/index.ts"
 compatibility_date = "2026-11-12"
 
 [ai]
