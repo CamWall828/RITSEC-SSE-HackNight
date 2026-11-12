@@ -1,0 +1,6 @@
+name = "packetcat"
+main = "/"
+compatibility_date = "2026-11-12"
+
+[ai]
+binding = "AI"
