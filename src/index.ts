@@ -37,7 +37,10 @@ export default {
         headers: { "Access-Control-Allow-Origin": "*" },
       });
     } catch (error) {
-      return Response.json({ error: "Invalid JSON or AI execution failed" }, { status: 500 });
+      return Response.json(
+        { error: error?.message || "Unknown error occurred" },
+        { status: 500, headers: { "Access-Control-Allow-Origin": "*" } }
+      );
     }
   },
 };
