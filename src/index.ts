@@ -4,7 +4,6 @@ export interface Env {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    // Handle CORS preflight requests from browsers
     if (request.method === "OPTIONS") {
       return new Response(null, {
         headers: {
@@ -15,34 +14,66 @@ export default {
       });
     }
 
-    // Only allow POST requests
     if (request.method !== "POST") {
-      return new Response("Send a POST request with a JSON body: { \"prompt\": \"...\" }", { status: 405 });
+      return new Response("Send a POST request with a .txt file or JSON body.", { status: 405 });
     }
 
     try {
-      const { prompt } = await request.json<{ prompt?: string }>();
-      if (!prompt) {
-        return Response.json({ error: "Missing 'prompt' in request body" }, { status: 400 });
+      const contentType = request.headers.get("Content-Type") || "";
+      let fileContent = "";
+
+      // Handle multipart/form-data (e.g., curl -F "file=@logs.txt")
+      if (contentType.includes("multipart/form-data")) {
+        const formData = await request.formData();
+        const file = formData.get("file");
+        if (!file || typeof file === "string") {
+          return Response.json({ error: "Missing 'file' upload in form data" }, { status: 400 });
+        }
+        fileContent = await file.text();
+      } 
+      // Handle JSON payload ({ "prompt": "..." })
+      else if (contentType.includes("application/json")) {
+        const body = await request.json<{ prompt?: string }>();
+        fileContent = body.prompt || "";
+      } 
+      // Handle raw text file upload (e.g., curl --data-binary @logs.txt)
+      else {
+        fileContent = await request.text();
       }
 
-      const aiResponse = await env.AI.run("@cf/cloudflare/clef-omni", {
-        model: "clef-omni",
-        state: prompt,
-        questions: {
-          is_security_event: {
-            type: "noul",
-            instructions: "Does this input describe or contain a security log or event?",
+      if (!fileContent.trim()) {
+        return Response.json({ error: "Uploaded file or text is empty" }, { status: 400 });
+      }
+
+      // Run Gemma 4 26B A4B for direct text analysis
+      const aiResponse = await env.AI.run("@cf/google/gemma-4-26b-a4b-it", {
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a cybersecurity analyst. Analyze the provided log file and give a direct, clear response detailing any security events, suspicious activity, severity level, and recommended next steps.",
           },
+          {
+            role: "user",
+            content: fileContent,
+          },
+        ],
+        // Disable step-by-step reasoning tokens for faster, direct answers
+        chat_template_kwargs: {
+          enable_thinking: false,
         },
       });
 
-      return Response.json(aiResponse, {
-        headers: { "Access-Control-Allow-Origin": "*" },
-      });
-    } catch (error) {
       return Response.json(
-        { error: error?.message || "Unknown error occurred" },
+        {
+          characters_processed: fileContent.length,
+          aiResponse,
+        },
+        { headers: { "Access-Control-Allow-Origin": "*" } }
+      );
+    } catch (error: any) {
+      return Response.json(
+        { error: error?.message || "Failed to process file" },
         { status: 500, headers: { "Access-Control-Allow-Origin": "*" } }
       );
     }
