@@ -26,7 +26,7 @@ export default {
         return Response.json({ error: "Missing 'prompt' in request body" }, { status: 400 });
       }
 
-      const aiResponse = await env.AI.run("@cf/deepseek-ai/deepseek-v4.1-flash-1017", {
+      const aiResponse = await env.AI.run("@cf/cloudflare/clef-omni", {
         messages: [
           { role: "system", content: "You are a helpful assistant." },
           { role: "user", content: prompt },
