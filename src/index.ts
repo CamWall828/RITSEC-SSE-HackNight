@@ -1,38 +1,50 @@
-
 export interface Env {
-	AI: Ai;
+  AI: Ai;
 }
 
 export default {
-	async fetch(request, env): Promise<Response> {
-		const response = await env.AI.run("@cf/cloudflare/clef", {
-			model: "clef",
-			state: "Checkout has been failing for every customer for the last hour.",
-			questions: {
-				urgent: {
-					type: "noul",
-					instructions: "Is this support request urgent?",
-				},
-				team: {
-					type: "choice",
-					instructions: "Which team should handle this request?",
-					criteria: {
-						billing: "Payments, invoices, and refunds",
-						technical: "Outages, errors, and configuration",
-						sales: "Plans and upgrades",
-					},
-				},
-				severity: {
-					type: "score",
-					instructions: "How severe is the customer impact?",
-					criteria: ["No impact", "Minor", "Major", "Critical"],
-				},
-			},
-		});
+  async fetch(request: Request, env: Env): Promise<Response> {
+    // Handle CORS preflight requests from browsers
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type",
+        },
+      });
+    }
 
-		// response.answers.urgent   -> probability the request is urgent
-		// response.answers.team     -> chosen team with per-option probabilities
-		// response.answers.severity -> probability-weighted score (0 = lowest level)
-		return Response.json(response);
-	},
-} satisfies ExportedHandler<Env>;
+    // Only allow POST requests
+    if (request.method !== "POST") {
+      return new Response("Send a POST request with a JSON body: { \"prompt\": \"...\" }", { status: 405 });
+    }
+
+    try {
+      const { prompt } = await request.json<{ prompt?: string }>();
+      if (!prompt) {
+        return Response.json({ error: "Missing 'prompt' in request body" }, { status: 400 });
+      }
+
+      const aiResponse = await env.AI.run("@cf/cloudflare/clef-omni", {
+        model: "clef-omni",
+        state: prompt,
+        questions: {
+          is_security_event: {
+            type: "noul",
+            instructions: "Does this input describe or contain a security log or event?",
+          },
+        },
+      });
+
+      return Response.json(aiResponse, {
+        headers: { "Access-Control-Allow-Origin": "*" },
+      });
+    } catch (error) {
+      return Response.json(
+        { error: error?.message || "Unknown error occurred" },
+        { status: 500, headers: { "Access-Control-Allow-Origin": "*" } }
+      );
+    }
+  },
+};
